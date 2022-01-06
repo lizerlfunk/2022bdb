@@ -11,6 +11,9 @@ library(beeswarm)
 library(gganimate) 
 library(ggridges)  
 library(tidyr)  
+library(caret)
+library(MASS)
+library(Hmisc)
 ```
 
 Import data.
@@ -32,13 +35,13 @@ PFFScoutingData <- read.csv("~/Documents/2022bdb/nfl-big-data-bowl-2022/PFFScout
 Merge tracking data for 2018 with plays and games data. 
 
 ```{r}
-merged.games.plays.tracking2018 <- tracking2018 %>% inner_join(games) %>% inner_join(plays) 
+merged.games.plays.tracking2018 <- tracking2018 %>% inner_join(games) %>% inner_join(plays) %>% inner_join(PFFScoutingData)
 
 ```
-Filter data to include only fair catch and return results.
+Filter data to include only touchback and return results.
 
 ```{r}
-merged.games.plays.tracking2018 <- filter(merged.games.plays.tracking2018, specialTeamsResult == "Return" | specialTeamsResult == "Fair Catch" | specialTeamsResult == "Touchback")
+merged.games.plays.tracking2018 <- filter(merged.games.plays.tracking2018, specialTeamsResult == "Return" | specialTeamsResult == "Touchback")
 ```
 
 Transform data so that all plays are going in the same direction.
@@ -48,25 +51,12 @@ merged.games.plays.tracking2018 <- merged.games.plays.tracking2018 %>%
                 mutate(x = ifelse(playDirection == "left", 120-x, x),
                        y = ifelse(playDirection == "left", 160/3 - y, y))
 ```
-
-
-Filter touchback plays to analyze ball position. 
-
-```{r}
-merged.games.plays.tracking2018.touchbacks <- filter(merged.games.plays.tracking2018, specialTeamsResult == "Touchback" & displayName == "football")
-```
-
-For all touchback plays, the ball is in the end zone, no decision to make. Filter these out as well.
-
-```{r}
-merged.games.plays.tracking2018 <- filter(merged.games.plays.tracking2018, specialTeamsResult == "Return" | specialTeamsResult == "Fair Catch")
-```
-
+(Note: In this step, we should have also transformed the variable absoluteYardlineNumber in the same manner that x was transformed. This was an oversight and was corrected later in the notebook distancebetweenplayers.Rmd.)
 
 Filter tracking data to include only the frames in which a catch is made.
 
 ```{r}
-merged.games.plays.tracking2018 <- filter(merged.games.plays.tracking2018, event == "kick_received" | event == "fair_catch")
+merged.games.plays.tracking2018 <- filter(merged.games.plays.tracking2018, event == "kick_received")
 ```
 
 Choose a single play. 
@@ -129,11 +119,11 @@ animate.play <- ggplot() +
 animate.play
 ```
 
-Choose a second play (this is a punt fair catch).
+Choose a second play (this is a touchback).
 
 ```{r}
-merged.games.plays.tracking2018play465 <- filter(merged.games.plays.tracking2018, playId == 465
- & gameId == 2018123004)
+merged.games.plays.tracking2018play392 <- filter(merged.games.plays.tracking2018, playId == 392
+ & gameId == 2018123000)
 ```
 
 Visualize the play.
@@ -149,8 +139,8 @@ hash.width <- 3.3
 
 
 ## Specific boundaries for a given play
-ymin <- max(round(min(merged.games.plays.tracking2018play465$x, na.rm = TRUE) - 10, -1), 0)
-ymax <- min(round(max(merged.games.plays.tracking2018play465$x, na.rm = TRUE) + 10, -1), 120)
+ymin <- max(round(min(merged.games.plays.tracking2018play392$x, na.rm = TRUE) - 10, -1), 0)
+ymax <- min(round(max(merged.games.plays.tracking2018play392$x, na.rm = TRUE) + 10, -1), 120)
 df.hash <- expand.grid(x = c(0, 23.36667, 29.96667, xmax), y = (10:110))
 df.hash <- df.hash %>% filter(!(floor(y %% 5) == 0))
 df.hash <- df.hash %>% filter(y < ymax, y > ymin)
@@ -178,32 +168,21 @@ animate.play2 <- ggplot() +
            y = c(ymin, ymax, ymax, ymin), 
            xend = c(xmin, xmax, xmax, xmin), 
            yend = c(ymax, ymax, ymin, ymin), colour = "black") + 
-  geom_point(data = merged.games.plays.tracking2018play465, aes(x = (xmax-y), y = x, shape = team,
+  geom_point(data = merged.games.plays.tracking2018play392, aes(x = (xmax-y), y = x, shape = team,
                                  fill = team, group = nflId, size = team, colour = team), alpha = 0.7) + 
-  geom_text(data = merged.games.plays.tracking2018play465, aes(x = (xmax-y), y = x, label = jerseyNumber), colour = "white", 
+  geom_text(data = merged.games.plays.tracking2018play392, aes(x = (xmax-y), y = x, label = jerseyNumber), colour = "white", 
             vjust = 0.36, size = 3.5) + 
   ylim(ymin, ymax) + 
   coord_fixed()
 
 animate.play2
 ```
-Filter plays in which a punt was returned.
+
+Choose specific play to visualize (touchback).
 
 ```{r}
-merged.games.plays.tracking2018puntreturns <- filter(merged.games.plays.tracking2018, specialTeamsResult == "Return" & specialTeamsPlayType == "Punt")
-```
-
-Filter plays in which a kickoff resulted in fair catch.
-
-```{r}
-merged.games.plays.tracking2018kickoff.faircatch <- filter(merged.games.plays.tracking2018, specialTeamsResult == "Fair Catch" & specialTeamsPlayType == "Kickoff")
-```
-
-Choose specific play to visualize (punt, return).
-
-```{r}
-merged.games.plays.tracking2018play592 <- filter(merged.games.plays.tracking2018, playId == 592
- & gameId == 2018123015)
+merged.games.plays.tracking2019play3603 <- filter(merged.games.plays.tracking2019, playId == 3603
+ & gameId == 2019090808)
 ```
 
 Visualize the play.
@@ -219,8 +198,8 @@ hash.width <- 3.3
 
 
 ## Specific boundaries for a given play
-ymin <- max(round(min(merged.games.plays.tracking2018play592$x, na.rm = TRUE) - 10, -1), 0)
-ymax <- min(round(max(merged.games.plays.tracking2018play592$x, na.rm = TRUE) + 10, -1), 120)
+ymin <- max(round(min(merged.games.plays.tracking2019play3603$x, na.rm = TRUE) - 10, -1), 0)
+ymax <- min(round(max(merged.games.plays.tracking2019play3603$x, na.rm = TRUE) + 10, -1), 120)
 df.hash <- expand.grid(x = c(0, 23.36667, 29.96667, xmax), y = (10:110))
 df.hash <- df.hash %>% filter(!(floor(y %% 5) == 0))
 df.hash <- df.hash %>% filter(y < ymax, y > ymin)
@@ -248,9 +227,9 @@ animate.play3 <- ggplot() +
            y = c(ymin, ymax, ymax, ymin), 
            xend = c(xmin, xmax, xmax, xmin), 
            yend = c(ymax, ymax, ymin, ymin), colour = "black") + 
-  geom_point(data = merged.games.plays.tracking2018play592, aes(x = (xmax-y), y = x, shape = team,
+  geom_point(data = merged.games.plays.tracking2019play3603, aes(x = (xmax-y), y = x, shape = team,
                                  fill = team, group = nflId, size = team, colour = team), alpha = 0.7) + 
-  geom_text(data = merged.games.plays.tracking2018play592, aes(x = (xmax-y), y = x, label = jerseyNumber), colour = "white", 
+  geom_text(data = merged.games.plays.tracking2019play3603, aes(x = (xmax-y), y = x, label = jerseyNumber), colour = "white", 
             vjust = 0.36, size = 3.5) + 
   ylim(ymin, ymax) + 
   coord_fixed()
@@ -258,11 +237,12 @@ animate.play3 <- ggplot() +
 animate.play3
 ```
 
-Choose specific play to visualize (kickoff, fair catch).
+
+Choose specific play to visualize (kickoff returned for a touchdown).
 
 ```{r}
-merged.games.plays.tracking2018play572 <- filter(merged.games.plays.tracking2018, playId == 572
- & gameId == 2018123006)
+merged.games.plays.tracking.2020play1853 <- filter(merged.games.plays.tracking.all, playId == 1853
+ & gameId == 2020111600)
 ```
 
 Visualize the play.
@@ -278,8 +258,8 @@ hash.width <- 3.3
 
 
 ## Specific boundaries for a given play
-ymin <- max(round(min(merged.games.plays.tracking2018play572$x, na.rm = TRUE) - 10, -1), 0)
-ymax <- min(round(max(merged.games.plays.tracking2018play572$x, na.rm = TRUE) + 10, -1), 120)
+ymin <- max(round(min(merged.games.plays.tracking.2020play1853$x, na.rm = TRUE) - 10, -1), 0)
+ymax <- min(round(max(merged.games.plays.tracking.2020play1853$x, na.rm = TRUE) + 10, -1), 120)
 df.hash <- expand.grid(x = c(0, 23.36667, 29.96667, xmax), y = (10:110))
 df.hash <- df.hash %>% filter(!(floor(y %% 5) == 0))
 df.hash <- df.hash %>% filter(y < ymax, y > ymin)
@@ -307,9 +287,9 @@ animate.play4 <- ggplot() +
            y = c(ymin, ymax, ymax, ymin), 
            xend = c(xmin, xmax, xmax, xmin), 
            yend = c(ymax, ymax, ymin, ymin), colour = "black") + 
-  geom_point(data = merged.games.plays.tracking2018play572, aes(x = (xmax-y), y = x, shape = team,
+  geom_point(data = merged.games.plays.tracking.2020play1853, aes(x = (xmax-y), y = x, shape = team,
                                  fill = team, group = nflId, size = team, colour = team), alpha = 0.7) + 
-  geom_text(data = merged.games.plays.tracking2018play572, aes(x = (xmax-y), y = x, label = jerseyNumber), colour = "white", 
+  geom_text(data = merged.games.plays.tracking.2020play1853, aes(x = (xmax-y), y = x, label = jerseyNumber), colour = "white", 
             vjust = 0.36, size = 3.5) + 
   ylim(ymin, ymax) + 
   coord_fixed()

@@ -1,0 +1,158 @@
+---
+title: "Reporting on Results"
+output: html_notebook
+---
+
+Subset data set to remove columns.
+
+```{r}
+final.data.with.predictions <- subset(final.data.with.predictions, select = c(nflId.1, displayName.1, position.1, specialTeamsResult, kickLength, speedOfClosestCoverage, distanceToClosestCoverage, kickTeamWithin5, yardsTillTouchdown, imputed_hangTime, predictedPosition))
+```
+
+Count the number of plays of each type by each returner.
+
+```{r}
+playTypeByReturner <- final.data.with.predictions %>% count(displayName.1, specialTeamsResult)
+attach(playTypeByReturner)
+sortedPlayTypeByReturner <- playTypeByReturner[order(-n),]
+```
+
+
+```{r}
+sortedPlayTypeByReturner <- playTypeByReturner[order(specialTeamsResult, -n),]
+```
+
+```{r}
+final.data.with.predictions$predictedMinusYardsActual <- final.data.with.predictions$predictedPosition - final.data.with.predictions$yardsTillTouchdown
+```
+
+Identify each play as a Return or Touchback based on the predicted position. If a player is predicted to have a position of 75 or less, then it is best to attempt a return. If he will have a position of less than 25, it is best to take a touchback.
+
+```{r}
+final.data.with.predictions <- mutate(final.data.with.predictions, playResultBasedOnPredictions = ifelse(predictedPosition <= 75, "Return", "Touchback"))
+```
+
+Create frequency table. 
+
+```{r}
+CrossTabsActualvsPredicted <- final.data.with.predictions %>%
+  group_by(specialTeamsResult, playResultBasedOnPredictions) %>%
+  tally() %>%
+  spread(specialTeamsResult, n)
+```
+
+
+Plot each explanatory variable with the target variable.
+
+```{r}
+plot(final.data.with.predictions$kickLength, final.data.with.predictions$predictedPosition, xlab = "Kick Length", ylab = "Predicted Yards Till Touchdown")
+```
+```{r}
+as.factor(final.data.with.predictions$specialTeamsResult)
+colors <- c("red", "blue")
+plot(final.data.with.predictions$speedOfClosestCoverage, final.data.with.predictions$predictedPosition, xlab = "Speed of Closest Coverage", ylab = "Predicted Yards Till Touchdown")
+```
+```{r}
+plot(final.data.with.predictions$distanceToClosestCoverage, final.data.with.predictions$predictedPosition, xlab = "Distance to Closest Coverage", ylab = "Predicted Yards Till Touchdown")
+```
+```{r}
+plot(final.data.with.predictions$imputed_hangTime, final.data.with.predictions$predictedPosition, xlab = "Hang Time (Imputed)", ylab = "Predicted Yards Till Touchdown")
+```
+
+
+```{r}
+as.factor(final.data.with.predictions$kickTeamWithin5)
+p1 <- ggplot(final.data.with.predictions, aes(group = kickTeamWithin5, x=kickTeamWithin5, y=predictedPosition)) + 
+    geom_boxplot()
+p1
+```
+Filter final data with predictions by plays where predicted outcome and actual outcome did not match.
+
+```{r}
+final.data.with.predictions.mismatch <- filter(final.data.with.predictions, specialTeamsResult != playResultBasedOnPredictions)
+```
+
+Count each player's number of mismatches.
+
+```{r}
+
+mismatchesByReturner <- final.data.with.predictions.mismatch %>% count(displayName.1, specialTeamsResult)
+mismatchesByReturnerSorted <- mismatchesByReturner[order(mismatchesByReturner$specialTeamsResult, -mismatchesByReturner$n),]
+```
+
+Add variable to original data set for whether player made correct decision or not.
+
+```{r}
+final.data.with.predictions <- mutate(final.data.with.predictions, correctDecision = ifelse(specialTeamsResult == playResultBasedOnPredictions, "Y", "N"))
+```
+
+Get summary statistics for each returner's predictedMinusYardsActual.
+
+```{r}
+summary.statistics.predictedMinusYardsActual <- final.data.with.predictions %>% group_by(displayName.1) %>% summarise(
+  Min = min(predictedMinusYardsActual),
+  Q1 = quantile(predictedMinusYardsActual, .25),
+  Med = median(predictedMinusYardsActual), 
+  Q3 = quantile(predictedMinusYardsActual, .75),
+  Max = max(predictedMinusYardsActual),
+  Avg = mean(predictedMinusYardsActual),
+  SD = sd(predictedMinusYardsActual))
+```
+
+Sort by mean.
+
+```{r}
+sorted.summary.statistics <- summary.statistics.predictedMinusYardsActual[order(-summary.statistics.predictedMinusYardsActual$Avg),]
+```
+
+Calculate number of returns/touchbacks per player. 
+
+```{r}
+count.per.player <- final.data.with.predictions %>% count(displayName.1)
+```
+
+Merge count with summary statistics.
+
+```{r}
+sorted.summary.statistics <- left_join(
+  sorted.summary.statistics,
+  count.per.player,
+  by = c("displayName.1"),
+  copy = FALSE,
+  suffix = c(".1", ".2"),
+  keep = FALSE
+)
+```
+
+Filter by minimum of 10 attempts. 
+
+```{r}
+sorted.summary.statistics.filtered <- filter(sorted.summary.statistics, n >= 10)
+```
+
+Slice top 10 and bottom 10.
+
+```{r}
+top.10.predicted.minus.actual <- sorted.summary.statistics.filtered %>% slice(1:10)
+bottom.10.predicted.minus.actual <- sorted.summary.statistics.filtered %>% slice(69:78)
+```
+
+Merge mismatches by returner with total number of returns/touchbacks attempted.
+
+```{r}
+mismatchesByReturnerSorted <- left_join(
+  mismatchesByReturnerSorted,
+  count.per.player,
+  by = c("displayName.1"),
+  copy = FALSE,
+  suffix = c(".1", ".2"),
+  keep = FALSE
+)
+```
+
+Slice top 10 mismatches for returns and top 10 mismatches for touchbacks.
+
+```{r}
+top.10.mismatches.returns <- mismatchesByReturnerSorted %>% slice(1:10)
+top.10.mismatches.touchbacks <- mismatchesByReturnerSorted %>% slice(173:182)
+```

@@ -1,0 +1,93 @@
+---
+title: "Tracking data 2019 and 2020"
+output: html_notebook
+---
+
+Must run visualizingtrackingdata.Rmd first!
+Merge tracking, plays, games, and PFF data for 2019.
+
+Merge tracking data for 2019 with plays and games data. 
+
+```{r}
+merged.games.plays.tracking2019 <- tracking2019 %>% inner_join(games) %>% inner_join(plays) %>% inner_join(PFFScoutingData)
+
+```
+Filter data to include only touchback and return results.
+
+```{r}
+merged.games.plays.tracking2019 <- filter(merged.games.plays.tracking2019, specialTeamsResult == "Return" | specialTeamsResult == "Touchback")
+```
+
+Transform data so that all plays are going in the same direction.
+
+```{r}
+merged.games.plays.tracking2019 <- merged.games.plays.tracking2019 %>%
+                mutate(x = ifelse(playDirection == "left", 120-x, x),
+                       y = ifelse(playDirection == "left", 160/3 - y, y))
+```
+
+
+Filter tracking data to include only the frames in which a catch is made.
+
+```{r}
+merged.games.plays.tracking2019 <- filter(merged.games.plays.tracking2019, event == "kick_received")
+```
+
+
+Merge tracking data for 2020 with plays and games data. 
+
+```{r}
+merged.games.plays.tracking2020 <- tracking2020 %>% inner_join(games) %>% inner_join(plays) %>% inner_join(PFFScoutingData)
+
+```
+Filter data to include only touchback and return results.
+
+```{r}
+merged.games.plays.tracking2020 <- filter(merged.games.plays.tracking2020, specialTeamsResult == "Return" | specialTeamsResult == "Touchback")
+```
+
+Transform data so that all plays are going in the same direction.
+
+```{r}
+merged.games.plays.tracking2020 <- merged.games.plays.tracking2020 %>%
+                mutate(x = ifelse(playDirection == "left", 120-x, x),
+                       y = ifelse(playDirection == "left", 160/3 - y, y))
+```
+
+
+Filter tracking data to include only the frames in which a catch is made.
+
+```{r}
+merged.games.plays.tracking2020 <- filter(merged.games.plays.tracking2020, event == "kick_received")
+```
+
+
+Merge all three data sets together and export to CSV. 
+
+```{r}
+merged.games.plays.tracking.all <- rbind(merged.games.plays.tracking2018, merged.games.plays.tracking2019, merged.games.plays.tracking2020)
+write.csv(merged.games.plays.tracking.all,"~/Documents/2022bdb/mergedgamesplaystrackingall.csv", row.names = FALSE)
+```
+
+Determine what columns can be dropped.
+
+```{r}
+unique(merged.games.plays.tracking.all$kickBlockerId)
+unique(merged.games.plays.tracking.all$kickContactType)
+unique(merged.games.plays.tracking.all$passResult)
+unique(merged.games.plays.tracking.all$snapDetail)
+unique(merged.games.plays.tracking.all$snapTime)
+unique(merged.games.plays.tracking.all$operationTime)
+unique(merged.games.plays.tracking.all$gunners)
+unique(merged.games.plays.tracking.all$puntRushers)
+unique(merged.games.plays.tracking.all$vises)
+```
+Remove unneeded columns.
+
+```{r}
+merged.games.plays.tracking.all = subset(merged.games.plays.tracking.all, select = -c(kickBlockerId,passResult) )
+```
+
+```{r}
+merged.games.plays.tracking.all = subset(merged.games.plays.tracking.all, select = -snapDetail )
+```

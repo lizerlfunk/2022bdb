@@ -1,0 +1,156 @@
+---
+title: "Negative Binomial Regression"
+output: html_notebook
+---
+
+Since the target variable is overdispersed, and can be interpreted as a count variable (since yardage is only provided in whole numbers), we use negative binomial regression. We will use repeated k-folds cross validation to fit the model.
+
+Load required libraries.
+
+```{r}
+library(caret)
+library(MASS)
+library(Hmisc)
+```
+
+Impute hangTime for missing values.
+
+```{r}
+final.data.returns$imputed_hangTime <- with(final.data.returns, impute(hangTime, mean))
+final.data.returns.imputed <- subset(final.data.returns, select = -hangTime)
+```
+
+Drop receivingTeamWithin5.
+
+```{r}
+final.data.returns.imputed <- subset(final.data.returns.imputed, select = -receivingTeamWithin5)
+```
+
+Drop netCoverage.
+
+```{r}
+final.data.returns.imputed2 <- subset(final.data.returns.imputed, select = -netCoverage)
+```
+
+Determine whether any values are missing.
+
+```{r}
+final.data.returns.imputed %>%
+  summarise_all(funs(sum(is.na(.))))
+```
+
+
+Define training control.
+```{r}
+train_control <- trainControl(method="cv", number=10)
+```
+
+Train the model.
+
+```{r}
+# train the model
+NBmodel <- train(yardsTillTouchdown ~ kickLength + speedOfClosestCoverage + 
+    distanceToClosestCoverage + kickTeamWithin5 + 
+    imputed_hangTime, data=final.data.returns.imputed2, trControl=train_control, method="glm.nb")
+# summarize results
+print(NBmodel)
+```
+
+```{r}
+NBModel1 <- glm.nb(yardsTillTouchdown ~ ., data = final.data.returns.imputed)
+summary(NBModel1)
+```
+
+```{r}
+NBModel2 <- update(NBModel1, .~. - receivingTeamWithin5)
+summary(NBModel2)
+```
+```{r}
+NBModel3 <- update(NBModel2, .~. + receivingTeamWithin5:netCoverage)
+summary(NBModel3)
+```
+
+```{r}
+NBModel4 <- update(NBModel2, .~. - netCoverage)
+summary(NBModel4)
+```
+
+```{r}
+# train the model
+NBmodelCV2 <- train(yardsTillTouchdown ~ kickLength + speedOfClosestCoverage + 
+    distanceToClosestCoverage + kickTeamWithin5 + imputed_hangTime, data=final.data.returns.imputed, trControl=train_control, method="glm.nb", start =  c(4, 0.1, 0.1, 0.1, 0.1, 0.1))
+# summarize results
+print(NBmodelCV2)
+```
+
+```{r}
+NBmodelCV2
+```
+```{r}
+NBmodelCV2$finalModel
+```
+
+```{r}
+NBmodelCV2$results
+```
+Impute missing hangTime values in touchback data.
+
+```{r}
+final.data.touchbacks$imputed_hangTime <- with(final.data.touchbacks, impute(hangTime, mean))
+final.data.touchbacks.imputed <- subset(final.data.touchbacks, select = -c(hangTime, receivingTeamWithin5, netCoverage))
+```
+
+Use k-fold validated model to calculate 
+
+```{r}
+final.data.returns.imputed2$predictedPosition <- predict(NBmodelCV2, final.data.returns.imputed2)
+```
+
+
+```{r}
+plot(final.data.returns.imputed2$yardsTillTouchdown, final.data.returns.imputed2$predictedPosition, xlab = "Yards till Touchdown", ylab = "Model Prediction", main = "Comparing Return Data with Regression Prediction")
+abline(a=0, b=1, col="blue")
+
+```
+Find residuals.
+
+```{r}
+standard_res <- rstandard(NBmodelCV2$finalModel)
+```
+
+```{r}
+summary(standard_res)
+```
+
+Merge standardized residuals with rest of data set.
+
+```{r}
+final.data.returns.imputed3 <- cbind(final.data.returns.imputed2, standard_res)
+```
+
+
+```{r}
+plot(final.data.returns.imputed3$yardsTillTouchdown, standard_res, ylab='Standardized Residuals', xlab='Yards till Touchdown', main="Kickoff Return Data")
+abline(0,0, col="blue")
+```
+
+
+```{r}
+final.data.touchbacks.imputed$predictedPosition <- predict(NBmodelCV2, final.data.touchbacks.imputed)
+```
+
+Bind prediction data frames together and merge with original dataframe.
+
+```{r}
+prediction.data <- rbind(final.data.returns.imputed2, final.data.touchbacks.imputed)
+final.data.with.predictions <- left_join(merged.all.distance.final.closestcoverage, prediction.data, by = c("gameId", "playId", "kickLength", "speedOfClosestCoverage", "distanceToClosestCoverage", "kickTeamWithin5", "yardsTillTouchdown"), copy = FALSE,
+  suffix = c(".1", ".2"),
+  keep = FALSE)
+```
+
+Export dataframe as CSV.
+
+```{r}
+write.csv(final.data.with.predictions,"~/Documents/2022bdb/final.data.with.predictions.csv", row.names = FALSE)
+```
+

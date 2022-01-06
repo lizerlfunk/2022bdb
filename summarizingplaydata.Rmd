@@ -1,0 +1,102 @@
+---
+title: "Summarizing play data"
+output: html_notebook
+---
+
+Count number of plays of each type and each result.
+
+```{r}
+plays %>%
+  group_by(specialTeamsResult, specialTeamsPlayType) %>%
+  summarize(n())
+```
+
+Count number of kickoffs and punts.
+
+```{r}
+plays %>%
+  group_by(specialTeamsPlayType) %>%
+  summarize(n())
+```
+
+
+Filter plays to include only plays with results of returns or touchbacks.
+
+
+```{r}
+plays.filtered <- filter(plays, specialTeamsResult == "Return" | specialTeamsResult == "Touchback")
+```
+
+Filter plays to include only kickoff plays.
+
+```{r}
+plays.filtered.kickoffs <- filter(plays.filtered, specialTeamsPlayType == "Kickoff")
+```
+
+
+How many plays had penalties?
+
+```{r}
+plays.filtered.kickoffs %>%
+  group_by(penaltyCodes) %>%
+  summarize(n())
+```
+Summarize absoluteYardlineNumber for kick received.
+
+```{r}
+plays.filtered.kickoffs %>%
+  group_by(specialTeamsResult) %>%
+  summarize(absoluteYardlineNumber)
+
+summary(plays.filtered.kickoffs$absoluteYardlineNumber)
+absYardlineNumHist <- hist(plays.filtered.kickoffs$absoluteYardlineNumber)
+absYardlineNumHist
+```
+Filter plays data to find touchbacks with a returner ID.
+
+```{r}
+plays.filtered.touchbacks <- filter(plays.filtered, specialTeamsResult == "Touchback")
+```
+
+No touchbacks have a returner ID. 
+
+Summarize absoluteYardLineResult by play direction.
+
+```{r}
+merged.games.plays.tracking.all2 %>% group_by(playDirection, absoluteYardlineNumber) %>% summarize(n())
+
+```
+
+Filter plays of interest based on play direction and create histograms.
+
+```{r}
+merged.all.distance.leftplays <- filter(merged.all.distance.final.closestcoverage, playDirection == "left")
+merged.all.distance.rightplays <- filter(merged.all.distance.final.closestcoverage, playDirection == "right")
+LeftAbsYardlineNumHist <- hist(merged.all.distance.leftplays$absoluteYardlineNumber)
+RightAbsYardlineNumHist <- hist(merged.all.distance.rightplays$absoluteYardlineNumber)
+LeftAbsYardlineNumHist
+RightAbsYardlineNumHist
+```
+Create histogram of net coverage.
+
+```{r}
+NetCoverageHist <- hist(merged.all.distance.final.closestcoverage$netCoverage, breaks=seq(-4.5,4.5,by=1))
+NetCoverageHist
+```
+Filter play data by kickoffs and returns vs touchbacks.
+
+```{r}
+plays.kickoffs.touchbacks <- filter(plays.filtered.kickoffs, specialTeamsResult == "Touchback")
+plays.kickoffs.returns <- filter(plays.filtered.kickoffs, specialTeamsResult == "Return")
+```
+
+Find kickoff return plays that had returns for touchdowns.
+
+```{r}
+plays.filtered.kickoffs.touchdowns <- filter(plays.filtered.kickoffs, kickReturnYardage > 90)
+```
+
+```{r}
+unique(final.data.returns.imputed$kickDirectionActual)
+```
+

@@ -1,0 +1,158 @@
+---
+title: "Model fitting"
+output: html_notebook
+---
+
+Load packages.
+
+```{r}
+library(olsrr)
+```
+
+
+Candidate 1: Linear regression
+
+Explanatory variables:
+week
+quarter (ideally will eliminate this and roll it into gameTimeRemaining, still troubleshooting code)
+kickLength
+hangTime
+kickDirectionActual
+kickoffReturnFormation
+speedOfClosestCoverage
+distanceToClosestCoverage
+netCoverage
+scoreDifferentialReceivingTeam
+gameClockDecimal
+
+Dependent variable: 
+yardsTillTouchdown
+
+```{r}
+linearModel1 <- lm(yardsTillTouchdown ~ ., data = final.data.returns)
+k <- ols_step_backward_p(linearModel1, details = TRUE)
+plot(k)
+linearModel1
+```
+
+```{r}
+ols_step_backward_p(linearModel1, details = TRUE)
+```
+
+
+
+
+
+
+Update the second model. Subtract the variable with the highest p-value.
+
+```{r}
+LinearModel3 = update(LinearModel2, . ~ . - kickoffReturnFormation)
+summary(LinearModel3)
+anova(LinearModel2, LinearModel3)
+```
+
+We have a problem! Several of our records are missing hangTime and/or kickoffReturnFormation. We must impute these in order to have all records included, OR just delete all records with missing info. How many are there?
+
+```{r}
+sum(is.na(final.data.returns$kickoffReturnFormation))
+sum(is.na(final.data.returns$hangTime))
+
+```
+12 records are missing kickoffReturnFormation. 274 are missing hangTime. 
+
+Impute missing values using mi package.
+
+```{r}
+library(Hmisc)
+```
+```{r}
+final.data.returns$imputed_hangTime <- with(final.data.returns, impute(hangTime, mean))
+
+```
+
+```{r}
+library(epiDisplay)
+```
+
+
+```{r}
+tab1(final.data.returns$kickoffReturnFormation, sort.group = "decreasing", cum.percent = TRUE)
+```
+Replace NA in kickoffReturnFormation with "unknown".
+
+```{r}
+final.data.returns$kickoffReturnFormation <- final.data.returns$kickoffReturnFormation %>% replace_na("unknown")
+```
+
+Replace NA in kickDirectionActual with "unknown".
+
+```{r}
+final.data.returns$kickDirectionActual <- final.data.returns$kickDirectionActual %>% replace_na("unknown")
+```
+
+
+Create new data set and delete hangTime column.
+
+```{r}
+final.data.returns.imputed <- subset(final.data.returns, select = -hangTime)
+```
+
+
+Linear model 2:
+
+```{r}
+LinearModel2 <- lm(yardsTillTouchdown ~ ., data = final.data.returns.imputed)
+m <- ols_step_backward_aic(LinearModel2)
+m
+plot(m)
+summary(LinearModel2)
+```
+
+Update by subtracting variables.
+
+```{r}
+LinearModel3 = update(LinearModel2, . ~ . - kickoffReturnFormation)
+summary(LinearModel3)
+anova(LinearModel2, LinearModel3)
+```
+
+Update by subtracting variables.
+
+```{r}
+LinearModel4 = update(LinearModel3, . ~ . - week)
+summary(LinearModel4)
+anova(LinearModel3, LinearModel4)
+```
+
+Update by subtracting variables.
+
+```{r}
+LinearModel5 = update(LinearModel4, . ~ . - gameClockDecimal)
+summary(LinearModel5)
+anova(LinearModel4, LinearModel5)
+```
+
+Update by subtracting variables.
+
+```{r}
+LinearModel6 = update(LinearModel5, . ~ . - scoreDifferentialReceivingTeam)
+summary(LinearModel6)
+anova(LinearModel5, LinearModel6)
+```
+Update by subtracting variables.
+
+```{r}
+LinearModel7 = update(LinearModel6, . ~ . - quarter)
+summary(LinearModel7)
+anova(LinearModel6, LinearModel7)
+```
+
+Update by subtracting variables.
+
+```{r}
+LinearModel8 = update(LinearModel7, . ~ . - kickDirectionActual)
+summary(LinearModel8)
+anova(LinearModel7, LinearModel8)
+```
+
