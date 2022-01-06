@@ -1,0 +1,321 @@
+---
+title: "distance between players"
+output: html_notebook
+---
+Rename data frame to match data.
+
+```{r}
+merged.games.plays.tracking.all <- mergedgamesplaystrackingall
+```
+
+Delete unnecessary columns.
+
+```{r}
+merged.games.plays.tracking.all <- subset(mergedgamesplaystrackingall, select = - c(kickBlockerId, snapDetail, passResult))
+```
+
+
+Duplicate merged data frame.
+
+```{r}
+merged.games.plays.tracking.all2 <- merged.games.plays.tracking.all
+```
+
+
+Merge tracking data with itself using left join. 
+
+```{r}
+merged.all.distance <- left_join(
+  merged.games.plays.tracking.all,
+  merged.games.plays.tracking.all2,
+  by = c("gameId", "gameDate", "gameTimeEastern", "gameClock", "homeTeamAbbr", "visitorTeamAbbr", "time", "event", "frameId", "playId", "playDirection", "season", "week", "playDescription", "down", "quarter", "yardsToGo", "possessionTeam", "specialTeamsPlayType", "specialTeamsResult", "kickerId", "returnerId", "yardlineSide", "yardlineNumber", "penaltyCodes", "penaltyJerseyNumbers", "penaltyYards", "preSnapHomeScore", "preSnapVisitorScore", "kickLength", "kickReturnYardage", "playResult", "absoluteYardlineNumber", "snapTime", "operationTime", "hangTime", "kickType", "kickDirectionIntended", "kickDirectionActual", "returnDirectionIntended", "returnDirectionActual", "missedTackler", "assistTackler", "tackler", "kickoffReturnFormation", "gunners", "puntRushers", "specialTeamsSafeties", "vises", "kickContactType"),
+  copy = FALSE,
+  suffix = c(".1", ".2"),
+  keep = FALSE
+)
+```
+
+
+Define teams as "kicking" and "receiving". 
+
+```{r}
+merged.all.distance <- mutate(merged.all.distance, playTeam.1 = ifelse(homeTeamAbbr == possessionTeam & team.1 == "home", "kicking", ""))
+merged.all.distance <- mutate(merged.all.distance, playTeam.1 = ifelse(visitorTeamAbbr == possessionTeam & team.1 == "home", "receiving", playTeam.1))
+merged.all.distance <- mutate(merged.all.distance, playTeam.1 = ifelse(homeTeamAbbr == possessionTeam & team.1 == "away", "receiving", playTeam.1))
+merged.all.distance <- mutate(merged.all.distance, playTeam.1 = ifelse(visitorTeamAbbr == possessionTeam & team.1 == "away", "kicking", playTeam.1))
+merged.all.distance <- mutate(merged.all.distance, playTeam.2 = ifelse(homeTeamAbbr == possessionTeam & team.2 == "home", "kicking", ""))
+merged.all.distance <- mutate(merged.all.distance, playTeam.2 = ifelse(visitorTeamAbbr == possessionTeam & team.2 == "home", "receiving", playTeam.2))
+merged.all.distance <- mutate(merged.all.distance, playTeam.2 = ifelse(homeTeamAbbr == possessionTeam & team.2 == "away", "receiving", playTeam.2))
+merged.all.distance <- mutate(merged.all.distance, playTeam.2 = ifelse(visitorTeamAbbr == possessionTeam & team.2 == "away", "kicking", playTeam.2))
+merged.all.distance <- mutate(merged.all.distance, playTeam.1 = ifelse(team.1 == "football", "football", playTeam.1))
+merged.all.distance <- mutate(merged.all.distance, playTeam.2 = ifelse(team.2 == "football", "football", playTeam.2))
+```
+
+
+Create variable to calculate distance.
+
+```{r}
+merged.all.distance$xDiff <- merged.all.distance$x.1 - merged.all.distance$x.2
+merged.all.distance$yDiff <- merged.all.distance$y.1 - merged.all.distance$y.2
+merged.all.distance$playerDistanceSquared <- merged.all.distance$xDiff^2 + merged.all.distance$yDiff^2
+merged.all.distance$playerDistance <- sqrt(merged.all.distance$playerDistanceSquared)
+merged.all.distance <- subset(merged.all.distance, select = -c(xDiff,yDiff,playerDistanceSquared) )
+```
+
+
+Flag distances of less than 5 yards. 
+
+```{r}
+merged.all.distance <- mutate(merged.all.distance, lessThan5 = ifelse(playerDistance<=5, "Y", "N"))
+```
+
+Filter out distances between the same players.
+
+```{r}
+merged.all.distance <- filter(merged.all.distance, displayName.1 != displayName.2)
+```
+
+```{r}
+unique(merged.all.distance$playTeam.1)
+unique(merged.all.distance$playTeam.2)
+```
+
+Filter receiving team members that are within one yard of the football to identify returner/ball receiver.
+
+```{r}
+merged.all.distance.receivertofootball <- filter(merged.all.distance, playTeam.1 == "receiving" & playTeam.2 == "football" & playerDistance < 1)
+```
+
+Flag the returner/ball receiver whenever he is player 1.
+
+```{r}
+merged.all.distance.receivertofootball <- mutate(merged.all.distance.receivertofootball, receiver = ifelse(nflId.1 == returnerId | playTeam.1 == "receiving" & playTeam.2 == "football" & playerDistance < 1, "Y", ""))
+```
+
+Delete unnecessary columns from returner/ball receiver data frame.
+
+```{r}
+merged.all.distance.receivertofootball <- subset(merged.all.distance.receivertofootball, select = c("gameId", "frameId", "playId", "nflId.1", "displayName.1", "receiver", "playDescription"))
+```
+
+Concatenate game ID and play ID to create unique play ID.
+
+```{r}
+merged.all.distance.receivertofootball <- mutate(merged.all.distance.receivertofootball, uniquePlayId = paste(gameId, playId, sep = "-"))
+```
+
+Concatenate unique play ID and NFL ID.
+
+```{r}
+merged.all.distance.receivertofootball <- mutate(merged.all.distance.receivertofootball, PlayId.receiver = paste(uniquePlayId, nflId.1, sep = "-"))
+```
+
+Determine whether any plays have multiple designated receivers.
+
+```{r}
+n_occur <- data.frame(table(merged.all.distance.receivertofootball$uniquePlayId))
+```
+
+Filter n_occur to find plays with more than 1 designated receiver.
+
+```{r}
+n_occur <- filter(n_occur, Freq > 1)
+```
+
+Choose the plays with more than 1 designated receiver, identify the correct receiver, filter out incorrect receivers.
+
+```{r}
+merged.all.distance.receivertofootball.duplicates <- filter(merged.all.distance.receivertofootball, uniquePlayId %in% n_occur$Var1)
+```
+
+Delete correct receivers in order to have set to filter out.
+
+```{r}
+merged.all.distance.receivertofootball.duplicates <- merged.all.distance.receivertofootball.duplicates %>% slice(-c(2, 4, 6, 7, 9, 12, 13, 15, 17, 21, 22, 25, 26, 28, 30, 33, 36, 37, 39, 42))
+```
+
+Filter out duplicates. 
+
+```{r}
+merged.all.distance.receivertofootball <- filter(merged.all.distance.receivertofootball, !PlayId.receiver %in% merged.all.distance.receivertofootball.duplicates$PlayId.receiver)
+```
+
+Merge receiver data into original data frame. 
+
+```{r}
+merged.all.distance.final <- left_join(
+  merged.all.distance,
+  merged.all.distance.receivertofootball,
+  by = c("gameId", "frameId", "playId", "nflId.1", "displayName.1", "playDescription"),
+  copy = FALSE,
+  suffix = c(".1", ".2"),
+  keep = FALSE
+)
+```
+
+Filter by receiver.
+
+```{r}
+merged.all.distance.final <- filter(merged.all.distance.final, receiver == "Y")
+```
+
+Remove unnecessary columns.
+
+```{r}
+merged.all.distance.final <- subset(merged.all.distance.final, select = -c(snapTime, operationTime, event, specialTeamsPlayType, down, yardsToGo,  PlayId.receiver))
+```
+
+
+Filter out distance between receiver and football.
+
+```{r}
+merged.all.distance.final <- filter(merged.all.distance.final, displayName.2 != "football")
+```
+
+Group distance data by game ID, play ID, kicking or receiving team, whether player is within 5 yards of receiver.
+
+```{r}
+merged.all.distance.final %>% count(playTeam.2, lessThan5, gameId, playId)
+```
+
+Filter by number of players within 5 yards of receiver.
+
+```{r}
+merged.all.distance.lessThan5 <- filter(merged.all.distance.final, lessThan5 == "Y")
+```
+
+Group distance data by game ID, play ID, kicking or receiving team.
+
+```{r}
+n_players_nearby <- merged.all.distance.lessThan5 %>% count(playTeam.2, gameId, playId)
+```
+
+Create data frames for kicking team players nearby and receiving team players nearby.
+
+```{r}
+kicking_players_nearby <- filter(n_players_nearby, playTeam.2 == "kicking")
+receiving_players_nearby <- filter(n_players_nearby, playTeam.2 == "receiving")
+```
+
+Rename columns.
+
+```{r}
+kicking_players_nearby <- kicking_players_nearby %>%
+  rename(kickTeamWithin5 = "n")
+receiving_players_nearby <- receiving_players_nearby %>%
+  rename(receivingTeamWithin5 = "n")
+```
+
+Drop unnecessary columns.
+
+```{r}
+kicking_players_nearby <- subset(kicking_players_nearby, select = -c(playTeam.2))
+receiving_players_nearby <- subset(receiving_players_nearby, select = -c(playTeam.2))
+```
+
+Merge kicking and receiving players nearby with main data frame.
+
+```{r}
+merged.all.distance.final <- left_join(
+  merged.all.distance.final,
+  kicking_players_nearby,
+  by = c("gameId", "playId"),
+  copy = FALSE,
+  suffix = c(".1", ".2"),
+  keep = FALSE
+)
+
+merged.all.distance.final <- left_join(
+  merged.all.distance.final,
+  receiving_players_nearby,
+  by = c("gameId", "playId"),
+  copy = FALSE,
+  suffix = c(".1", ".2"),
+  keep = FALSE
+)
+```
+
+Replace NAs in receiving_players_nearby and kicking_players_nearby with 0.
+
+```{r}
+merged.all.distance.final$kickTeamWithin5[is.na(merged.all.distance.final$kickTeamWithin5)] <- 0
+merged.all.distance.final$receivingTeamWithin5[is.na(merged.all.distance.final$receivingTeamWithin5)] <- 0
+```
+
+Blockers = players on receiving team
+Coverage = players on kicking team
+
+We assume that returners would be more likely to attempt a return and to achieve more of a return if there are more blockers near the receiver than coverage team members. Thus find difference between the two columns.
+
+```{r}
+merged.all.distance.final$netCoverage <- merged.all.distance.final$kickTeamWithin5 - merged.all.distance.final$receivingTeamWithin5
+```
+
+Next, find the distance between the receiver and the closest member of the kicking team to determine how much running room the returner has. 
+
+```{r}
+merged.all.distance.final.kicking <- filter(merged.all.distance.final, playTeam.2 == "kicking")
+merged.all.distance.final.kicking <- group_by(merged.all.distance.final.kicking, uniquePlayId)
+merged.all.distance.final.closestcoverage <- filter(merged.all.distance.final.kicking, rank(playerDistance, ties.method="first")==1)
+```
+
+Rename and drop columns.
+
+```{r}
+merged.all.distance.final.closestcoverage <- merged.all.distance.final.closestcoverage %>%
+  rename(distanceToClosestCoverage = playerDistance)
+merged.all.distance.final.closestcoverage <- merged.all.distance.final.closestcoverage %>%
+  rename(speedOfClosestCoverage = s.2)
+```
+
+Transform absoluteYardLineNumber for left direction plays. (Note: This should have been done in visualizingtrackingdata notebook when I transformed the rest of the data. I don't want to run all of the code over again so we're doing it now.)
+
+```{r}
+merged.all.distance.final.closestcoverage <- merged.all.distance.final.closestcoverage %>%
+                mutate(absoluteYardlineNumber = ifelse(playDirection == "left", 120-absoluteYardlineNumber, absoluteYardlineNumber))
+```
+
+
+Calculate yardsTillTouchdown (target variable).
+
+```{r}
+merged.all.distance.final.closestcoverage$yardsTillTouchdown <- merged.all.distance.final.closestcoverage$absoluteYardlineNumber + merged.all.distance.final.closestcoverage$playResult - 10
+```
+
+
+Filter data by return vs touchback.
+
+```{r}
+final.data.returns <- filter(merged.all.distance.final.closestcoverage, specialTeamsResult == "Return")
+final.data.touchbacks <- filter(merged.all.distance.final.closestcoverage, specialTeamsResult == "Touchback")
+```
+
+Drop all variables except target, explanatory, ID.
+
+```{r}
+final.data.returns <- subset(final.data.returns, select = c("kickLength", "hangTime", "speedOfClosestCoverage", "distanceToClosestCoverage", "netCoverage", "kickTeamWithin5", "receivingTeamWithin5", "yardsTillTouchdown", "gameId", "playId"))
+final.data.touchbacks <- subset(final.data.touchbacks, select = c("kickLength", "hangTime", "speedOfClosestCoverage", "distanceToClosestCoverage", "netCoverage", "kickTeamWithin5", "receivingTeamWithin5", "yardsTillTouchdown", "gameId", "playId"))
+```
+
+
+Find summary statistics for target variable (yardsTillTouchdown) for returns.
+
+```{r}
+summary(final.data.returns$yardsTillTouchdown)
+var(final.data.returns$yardsTillTouchdown)
+YardsTillTouchdownHist <- hist(final.data.returns$yardsTillTouchdown, main = "Yards till Touchdown at End of Return", xlab = "Yards till Touchdown")
+YardsTillTouchdownHist
+```
+Create boxplot of target variable.
+
+```{r}
+yardsTillTouchdownBoxplot <- boxplot(final.data.returns$yardsTillTouchdown, data=final.data.returns, main="Yards till Touchdown", ylab="Yards to Go at End of Return")
+```
+Export data frames to CSV.
+
+```{r}
+write.csv(final.data.returns,"~/Documents/2022bdb/final.data.returns.csv", row.names = FALSE)
+write.csv(final.data.touchbacks,"~/Documents/2022bdb/final.data.touchbacks.csv", row.names = FALSE)
+```
+
+
